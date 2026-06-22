@@ -1,0 +1,5 @@
+# HLint configuration for cardano-wallet-tools.
+# Suppress hints that conflict with our coding style.
+- ignore: { name: "Use camelCase" }
+- ignore: { name: "Redundant do" }
+- ignore: { name: "Use record patterns" }

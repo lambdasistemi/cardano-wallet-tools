@@ -1,0 +1,15 @@
+dist-newstyle/
+.ghc.environment.*
+*.hi
+*.o
+
+# LLM investigation notes (local only)
+.llm/
+
+# Direnv / nix
+.direnv/
+result
+result-*
+
+# Docs build output
+site/
