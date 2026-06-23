@@ -80,8 +80,18 @@ CBOR encoding, the build DSL, fee estimation, and balancing come from
 ### VI. Build-only by default; keys stay out of the core
 
 The core produces unsigned (or partially built) transactions and never
-holds key material. The browser signs via CIP-30 `signTx`; the CLI may
-optionally sign via an age-encrypted vault for unattended flows.
+holds key material. Signing is delegated to one of three custody
+modalities behind a single `Signer` record of functions, each emitting
+a detached vkey witness that attaches without re-encoding the body:
+
+- **CIP-30** — the browser wallet signs via `signTx`.
+- **Age-encrypted vault** — the CLI may optionally sign via an age
+  vault (reusing `cardano-tx-tools` `tx-sign`) for unattended flows.
+- **Hardware wallet** — the CLI may sign via a hardware device
+  (Ledger first, Trezor later).
+
+Key material lives only in the wallet, the vault, or the device. The
+signing layer is specified by the signing epic.
 
 ### VII. Service boundaries are records of functions
 
@@ -136,4 +146,4 @@ This constitution is authoritative on architectural conflict.
 Amendments land via PR. Any dependency admitted to the **core** must be
 shown to cross-compile to GHC-WASM and GHC-JS first (Principle II).
 
-**Version**: 0.1.0 | **Ratified**: 2026-06-22 | **Last amended**: 2026-06-22
+**Version**: 0.1.1 | **Ratified**: 2026-06-22 | **Last amended**: 2026-06-23
