@@ -46,9 +46,14 @@ jobs:
         run: |
           set -euo pipefail
           if [ -f .release-please-manifest.json ]; then
-            SEMVER=$(grep -o '"\.": *"[^"]*"' .release-please-manifest.json | sed 's/.*"\([0-9][^"]*\)".*/\1/')
+            manifest=$(<.release-please-manifest.json)
+            manifest="${manifest#*\".\":}"
+            manifest="${manifest#*\"}"
+            SEMVER="${manifest%%\"*}"
             PVP="${SEMVER}.0"
-            CABAL=$(grep '^version:' cardano-wallet-tools.cabal | awk '{print $2}')
+            while IFS=' ' read -r key val _; do
+              [[ "$key" == "version:" ]] && { CABAL="$val"; break; }
+            done < cardano-wallet-tools.cabal
             if [ "$CABAL" != "$PVP" ]; then
               echo "Version drift: cabal=${CABAL} manifest=${PVP}"
               exit 1
