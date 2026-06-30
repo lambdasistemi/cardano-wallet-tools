@@ -13,6 +13,11 @@ module Cardano.Wallet.Tools.Sign
       TxBodyBytes (..)
     , Signer (..)
 
+      -- * Witness attachment
+    , AttachWitnessError (..)
+    , attachWitnesses
+    , transactionBodyBytes
+
       -- * Detached witnesses
     , DetachedWitness (..)
     , WitnessDecodeError (..)
@@ -21,15 +26,8 @@ module Cardano.Wallet.Tools.Sign
     , encodeShelleyWitnessEnvelope
     ) where
 
-import Data.ByteString (ByteString)
-
+import Cardano.Wallet.Tools.Sign.AttachWitness
 import Cardano.Wallet.Tools.Sign.Witness
-
--- | Raw CBOR transaction-body bytes offered to a signing backend.
-newtype TxBodyBytes = TxBodyBytes
-    { unTxBodyBytes :: ByteString
-    }
-    deriving stock (Eq, Show)
 
 -- | Effect-polymorphic signer boundary.
 newtype Signer m = Signer

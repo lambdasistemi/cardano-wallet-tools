@@ -16,16 +16,16 @@
 
 ## Slice B - Body-Preserving Witness Attachment
 
-- [ ] T006-SB Create
+- [X] T006-SB Create
       `lib/Cardano/Wallet/Tools/Sign/AttachWitness.hs` with
       `transactionBodyBytes` and `attachWitnesses`.
-- [ ] T007-SB Splice vkey witnesses into witness-set map key `0`
+- [X] T007-SB Splice vkey witnesses into witness-set map key `0`
       while preserving the original transaction body bytes.
-- [ ] T008-SB Add focused tests proving witness insertion and body-byte
+- [X] T008-SB Add focused tests proving witness insertion and body-byte
       preservation after attachment.
-- [ ] T009-SB Update `cardano-wallet-tools.cabal` for the attachment
+- [X] T009-SB Update `cardano-wallet-tools.cabal` for the attachment
       module/test module if not already covered.
-- [ ] T010-SB Run `./gate.sh` and commit with
+- [X] T010-SB Run `./gate.sh` and commit with
       `Tasks: T006, T007, T008, T009, T010`.
 
 ## Finalization
