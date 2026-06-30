@@ -1,6 +1,7 @@
 name: CI
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
   pull_request:
@@ -41,6 +42,19 @@ jobs:
         run: nix build --quiet
       - name: Test
         run: nix run .#unit-tests --quiet
+      - name: Cabal version matches manifest
+        run: |
+          set -euo pipefail
+          if [ -f .release-please-manifest.json ]; then
+            SEMVER=$(jq -r '."."' .release-please-manifest.json)
+            PVP="${SEMVER}.0"
+            CABAL=$(grep '^version:' cardano-wallet-tools.cabal | awk '{print $2}')
+            if [ "$CABAL" != "$PVP" ]; then
+              echo "Version drift: cabal=${CABAL} manifest=${PVP}"
+              exit 1
+            fi
+            echo "Version ok: ${CABAL}"
+          fi
 
   formatting:
     name: CI format
