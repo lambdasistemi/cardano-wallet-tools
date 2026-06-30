@@ -30,7 +30,7 @@
 
 ## Finalization
 
-- [ ] T011-F Run final `./gate.sh` at HEAD.
-- [ ] T012-F Audit/update the PR body.
-- [ ] T013-F Drop `gate.sh` in the ready-for-review commit and mark the
+- [X] T011-F Run final `./gate.sh` at HEAD.
+- [X] T012-F Audit/update the PR body.
+- [X] T013-F Drop `gate.sh` in the ready-for-review commit and mark the
       PR ready.
