@@ -46,7 +46,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ -f .release-please-manifest.json ]; then
-            SEMVER=$(jq -r '."."' .release-please-manifest.json)
+            SEMVER=$(grep -o '"\.": *"[^"]*"' .release-please-manifest.json | sed 's/.*"\([0-9][^"]*\)".*/\1/')
             PVP="${SEMVER}.0"
             CABAL=$(grep '^version:' cardano-wallet-tools.cabal | awk '{print $2}')
             if [ "$CABAL" != "$PVP" ]; then
