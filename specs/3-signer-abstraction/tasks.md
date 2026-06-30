@@ -2,16 +2,16 @@
 
 ## Slice A - Signer Surface And Witness CBOR
 
-- [ ] T001-SA Create `lib/Cardano/Wallet/Tools/Sign.hs` with the
+- [X] T001-SA Create `lib/Cardano/Wallet/Tools/Sign.hs` with the
       `Signer` record-of-functions and key-free body/witness surface.
-- [ ] T002-SA Create `lib/Cardano/Wallet/Tools/Sign/Witness.hs` with
+- [X] T002-SA Create `lib/Cardano/Wallet/Tools/Sign/Witness.hs` with
       detached witness types plus raw and Shelley-envelope CBOR
       encoders/decoders.
-- [ ] T003-SA Add focused witness golden and round-trip tests under
+- [X] T003-SA Add focused witness golden and round-trip tests under
       `test/`.
-- [ ] T004-SA Update `cardano-wallet-tools.cabal` for new modules,
+- [X] T004-SA Update `cardano-wallet-tools.cabal` for new modules,
       tests, and minimal pure dependencies.
-- [ ] T005-SA Run `./gate.sh` and commit with
+- [X] T005-SA Run `./gate.sh` and commit with
       `Tasks: T001, T002, T003, T004, T005`.
 
 ## Slice B - Body-Preserving Witness Attachment
@@ -34,4 +34,3 @@
 - [ ] T012-F Audit/update the PR body.
 - [ ] T013-F Drop `gate.sh` in the ready-for-review commit and mark the
       PR ready.
-

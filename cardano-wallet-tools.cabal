@@ -44,9 +44,12 @@ library
   exposed-modules:
     Cardano.Wallet.Tools.Selection.Collateral
     Cardano.Wallet.Tools.Selection.Strategy
+    Cardano.Wallet.Tools.Sign
+    Cardano.Wallet.Tools.Sign.Witness
 
   build-depends:
     , base        >=4.18 && <5
+    , bytestring
     , containers
     , text
 
@@ -58,10 +61,12 @@ test-suite spec
   other-modules:
     Cardano.Wallet.Tools.Selection.CollateralSpec
     Cardano.Wallet.Tools.Selection.StrategySpec
+    Cardano.Wallet.Tools.Sign.WitnessSpec
 
   build-tool-depends: hspec-discover:hspec-discover
   build-depends:
     , base
+    , bytestring
     , cardano-wallet-tools
     , hspec
     , QuickCheck
