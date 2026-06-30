@@ -1,0 +1,33 @@
+name: Sync cabal version
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  sync:
+    if: startsWith(github.head_ref, 'release-please--')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.head_ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Sync cabal version from manifest
+        run: |
+          set -euo pipefail
+          SEMVER=$(jq -r '."."' .release-please-manifest.json)
+          PVP="${SEMVER}.0"
+          sed -i "s/^version:.*/version:         ${PVP}/" cardano-wallet-tools.cabal
+          echo "Set version: ${PVP}"
+
+      - name: Commit if changed
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git diff --quiet || git commit -am "chore: sync cabal version to $(jq -r '."."' .release-please-manifest.json)"
+          git push
