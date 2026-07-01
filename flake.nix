@@ -66,10 +66,12 @@
           pkg = project.hsPkgs.cardano-wallet-tools;
           components = pkg.components;
           unitTests = components.tests.spec;
+          cwt = components.exes.cwt;
         in {
           packages = {
             default = components.library;
             unit-tests = unitTests;
+            cwt = cwt;
           };
           checks = {
             unit = pkg.checks.spec;
@@ -78,6 +80,10 @@
             unit-tests = {
               type = "app";
               program = "${unitTests}/bin/spec";
+            };
+            cwt = {
+              type = "app";
+              program = "${cwt}/bin/cwt";
             };
           };
           devShells.default = project.shell;

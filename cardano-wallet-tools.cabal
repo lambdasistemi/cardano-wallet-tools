@@ -54,6 +54,19 @@ library
     , containers
     , text
 
+executable cwt
+  import:         warnings, language
+  hs-source-dirs: app
+  main-is:        Main.hs
+  other-modules:  Cli.Pipe
+  build-depends:
+    , base
+    , base16-bytestring
+    , bytestring
+    , cardano-wallet-tools
+    , optparse-applicative
+    , text
+
 test-suite spec
   import:             warnings, language
   type:               exitcode-stdio-1.0
