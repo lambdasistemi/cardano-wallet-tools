@@ -37,6 +37,7 @@ common language
   default-extensions:
     DerivingStrategies
     LambdaCase
+    OverloadedStrings
 
 library
   import:          warnings, language
@@ -58,12 +59,18 @@ executable cwt
   import:         warnings, language
   hs-source-dirs: app
   main-is:        Main.hs
-  other-modules:  Cli.Pipe
+  other-modules:
+    Cli.Key
+    Cli.Pipe
+
   build-depends:
+    , aeson
     , base
     , base16-bytestring
     , bytestring
     , cardano-wallet-tools
+    , crypton
+    , memory
     , optparse-applicative
     , text
 
