@@ -43,17 +43,26 @@ library
   import:          warnings, language
   hs-source-dirs:  lib
   exposed-modules:
+    Cardano.Wallet.Tools.Cli.Vault
     Cardano.Wallet.Tools.Selection.Collateral
     Cardano.Wallet.Tools.Selection.Strategy
     Cardano.Wallet.Tools.Sign
     Cardano.Wallet.Tools.Sign.AttachWitness
     Cardano.Wallet.Tools.Sign.Witness
+    Cardano.Wallet.Tools.Vault
 
   build-depends:
-    , base        >=4.18 && <5
+    , age
+    , aeson
+    , base             >=4.18 && <5
+    , base16-bytestring
     , bytestring
     , containers
+    , crypton
+    , memory
+    , optparse-applicative
     , text
+    , transformers
 
 executable cwt
   import:         warnings, language
@@ -64,13 +73,10 @@ executable cwt
     Cli.Pipe
 
   build-depends:
-    , aeson
     , base
     , base16-bytestring
     , bytestring
     , cardano-wallet-tools
-    , crypton
-    , memory
     , optparse-applicative
     , text
 
