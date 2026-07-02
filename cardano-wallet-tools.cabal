@@ -1,6 +1,6 @@
 cabal-version:   3.4
 name:            cardano-wallet-tools
-version:         0.1.0.0
+version:         0.1.1.0
 synopsis:        Wallet-side UTxO, coin, and collateral selection
 description:
   Pure, WASM-portable wallet-side selection for Cardano: coin selection
