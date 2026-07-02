@@ -90,6 +90,7 @@ test-suite spec
     Cardano.Wallet.Tools.Selection.StrategySpec
     Cardano.Wallet.Tools.Sign.AttachWitnessSpec
     Cardano.Wallet.Tools.Sign.WitnessSpec
+    Cardano.Wallet.Tools.VaultSpec
 
   build-tool-depends: hspec-discover:hspec-discover
   build-depends:
