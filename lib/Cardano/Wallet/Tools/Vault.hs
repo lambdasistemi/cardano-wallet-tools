@@ -3,6 +3,7 @@ module Cardano.Wallet.Tools.Vault
     , VaultPassphrase
     , WorkFactor
     , mkVaultPassphrase
+    , mkWorkFactor
     , encryptVault
     , decryptVault
     , defaultWorkFactor
@@ -28,6 +29,9 @@ import Data.Text (Text)
 
 newtype VaultPassphrase = VaultPassphrase Passphrase
     deriving stock (Eq)
+
+instance Show VaultPassphrase where
+    show _ = "<VaultPassphrase>"
 
 data VaultError
     = VaultEmptyPassphrase
