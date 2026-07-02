@@ -1,9 +1,10 @@
 {- HLINT ignore "Use newtype instead of data" -}
 module Main where
 
+import Cardano.Wallet.Tools.Sign
+import Cli.Key (die, loadSigner)
+import Cli.Pipe (readCborHex, writeCborHex)
 import Options.Applicative
-import System.Exit (exitFailure)
-import System.IO (hPutStrLn, stderr)
 
 data Command
     = Sign FilePath
@@ -43,8 +44,14 @@ main :: IO ()
 main = do
     cmd <- execParser opts
     case cmd of
-        Sign _ -> do
-            hPutStrLn
-                stderr
-                "cwt sign: not yet implemented (coming in next release)"
-            exitFailure
+        Sign keyPath -> do
+            signer <- loadSigner keyPath
+            txBytes <- readCborHex
+            body <-
+                either (die . ("cannot extract tx body: " <>) . show) pure $
+                    transactionBodyBytes txBytes
+            witness <- signTxBody signer body
+            signedTx <-
+                either (die . ("cannot attach witness: " <>) . show) pure $
+                    attachWitnesses [witness] txBytes
+            writeCborHex signedTx
