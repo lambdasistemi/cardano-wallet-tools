@@ -52,9 +52,9 @@ library
     Cardano.Wallet.Tools.Vault
 
   build-depends:
-    , age
     , aeson
-    , base             >=4.18 && <5
+    , age
+    , base                  >=4.18 && <5
     , base16-bytestring
     , bytestring
     , containers
