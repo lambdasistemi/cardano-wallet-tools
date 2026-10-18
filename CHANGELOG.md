@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.1.1](https://github.com/lambdasistemi/cardano-wallet-tools/compare/v0.1.0...v0.1.1) (2026-10-18)
+
+
+### Features
+
+* age vault signer — cwt vault seal + cwt sign --signing-key-vault ([c83ac54](https://github.com/lambdasistemi/cardano-wallet-tools/commit/c83ac54deed7e6aa384f552c8c239f0a5d71db45))
+* bootstrap wallet-core selection scaffold ([62a4008](https://github.com/lambdasistemi/cardano-wallet-tools/commit/62a4008858bd9998b8cb387a6af39365231e838d)), closes [#1](https://github.com/lambdasistemi/cardano-wallet-tools/issues/1)
+* CLI scaffold — cwt binary, optparse-applicative, CBOR hex pipeline ([#12](https://github.com/lambdasistemi/cardano-wallet-tools/issues/12)) ([1f5e0fe](https://github.com/lambdasistemi/cardano-wallet-tools/commit/1f5e0feae91e521812e62999d2aa3c3b4ecb2aed)), closes [#10](https://github.com/lambdasistemi/cardano-wallet-tools/issues/10)
+* cwt sign — TextEnvelope ed25519 key → attach witness ([#13](https://github.com/lambdasistemi/cardano-wallet-tools/issues/13)) ([ddeebe2](https://github.com/lambdasistemi/cardano-wallet-tools/commit/ddeebe2433fa897d6d0495dd2d6ff1c4ef185a89)), closes [#11](https://github.com/lambdasistemi/cardano-wallet-tools/issues/11)
+* ledger layer — bundle v1, offline checks, submit planner ([#24](https://github.com/lambdasistemi/cardano-wallet-tools/issues/24)) ([807a610](https://github.com/lambdasistemi/cardano-wallet-tools/commit/807a6103b59863cb0ddb3ec36b76131a7942ee8c))
+* vault v1 — cardano-cli key payload, exclusive 0600 create, passphrase from tty or fd ([#22](https://github.com/lambdasistemi/cardano-wallet-tools/issues/22)) ([d48385b](https://github.com/lambdasistemi/cardano-wallet-tools/commit/d48385b7bd7a1d395dff9f8cb07232633ddec5ff)), closes [#19](https://github.com/lambdasistemi/cardano-wallet-tools/issues/19)
+
+## Changelog
+
 ## Unreleased
 
 ### Features
