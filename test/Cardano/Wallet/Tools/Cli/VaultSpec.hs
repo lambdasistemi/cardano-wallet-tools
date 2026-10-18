@@ -176,9 +176,12 @@ handlers = do
                 let out = dir </> "payment.age"
                 sealTo out "cwt cli passphrase" ["--work-factor", "10"]
                     `shouldReturn` Right ()
-                signer <- signerFrom out "cwt cli passphrase" Nothing
+                signer <- signerFromVaultFile out "cwt cli passphrase" Nothing
                 witness <- witnessOf signer "body"
-                signatureVerifies vkey "body" (detachedWitnessSignature witness)
+                signatureVerifies
+                    vkey
+                    (bodyHash "body")
+                    (detachedWitnessSignature witness)
                     `shouldBe` True
                 mode <- fileMode <$> getFileStatus out
                 (mode .&. 0o777) `shouldBe` 0o600
@@ -342,7 +345,7 @@ capAtTheCommandLine = describe "work factor cap" $ do
             vkey <- verificationKeyOfFixture "payment.vkey"
             within10 <- loadFrom at10 "pass" Nothing
             within10 `shouldSatisfy` either (const False) (const True)
-            signer <- signerFrom at10 "pass" Nothing
+            signer <- signerFromVaultFile at10 "pass" Nothing
             witnessOf signer "body"
                 >>= (`shouldSatisfy` ((== vkey) . detachedWitnessVKey))
             above <- loadFrom at19 "pass" Nothing
@@ -407,11 +410,3 @@ loadFrom path secret selector =
         ignoreSigner
             <$> loadSignerFromSource
                 (VaultKey path (PassphraseDescriptor fd) selector)
-
-signerFrom
-    :: FilePath -> ByteString -> Maybe IdentitySelector -> IO (Signer IO)
-signerFrom path secret selector =
-    withPassphraseDescriptor (secret <> "\n") $ \fd ->
-        loadSignerFromSource
-            (VaultKey path (PassphraseDescriptor fd) selector)
-            >>= either (fail . T.unpack) pure

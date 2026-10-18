@@ -35,6 +35,7 @@ import Cardano.Wallet.Tools.Vault.Passphrase
     )
 import Cardano.Wallet.Tools.Vault.Payload
     ( IdentitySelector (..)
+    , OpenedKey (..)
     , parseSigningKeyEnvelope
     , signerFromKey
     )
@@ -203,7 +204,7 @@ loadSignerFromSource = \case
         key <-
             except . first (const (notAKey path)) $
                 parseSigningKeyEnvelope keyFile
-        pure (signerFromKey key)
+        pure (signerFromKey (OpenedPlain key))
     VaultKey path source selector -> runExceptT $ do
         vault <- readBytes "vault file" path
         passphrase <-

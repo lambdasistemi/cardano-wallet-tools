@@ -17,16 +17,28 @@ module Support.Vault
     , parseEnvelope
     , secretOfEnvelope
     , verificationKeyOfFixture
+    , readHexFixture
+    , readPassphraseFixture
     , identityLabelsOfPayload
+    , keyHashesOfPayload
+    , sourceFieldOfPayload
+    , payloadWithKeyHash
+    , payloadWithSourceField
+    , payloadKeeping
+    , mergedPayload
 
       -- * Keys
     , seedKey
     , seedEnvelope
     , keyFromSeed
     , publicOf
+    , bodyHash
+    , keyHashOf
     , signatureVerifies
     , witnessOf
     , signsAs
+    , encodedV1Of
+    , signerFromVaultFile
 
       -- * Passphrases and work factors
     , passphrase
@@ -56,6 +68,10 @@ module Support.Vault
     , drain
     ) where
 
+import Cardano.Wallet.Tools.Cli.Vault
+    ( SigningKeySource (..)
+    , loadSignerFromSource
+    )
 import Cardano.Wallet.Tools.Sign
     ( DetachedWitness (..)
     , Signer (..)
@@ -63,16 +79,20 @@ import Cardano.Wallet.Tools.Sign
     )
 import Cardano.Wallet.Tools.Vault.Passphrase
     ( Passphrase
+    , PassphraseSource (..)
     , mkPassphrase
     )
 import Cardano.Wallet.Tools.Vault.Payload
-    ( PaymentSigningKey
+    ( IdentitySelector
+    , OpenedKey (..)
+    , PaymentSigningKey
+    , encodeV1Payload
     , parseSigningKeyEnvelope
     , signerFromKey
     )
 import Control.Exception (IOException, SomeException, bracket, try)
 import Control.Exception qualified as Exception
-import Control.Monad (unless, (>=>))
+import Control.Monad (forM, unless, (>=>))
 import Control.Monad.Trans.Except (runExceptT)
 import Crypto.Age.Buffered qualified as Age
 import Crypto.Age.Recipient (Recipients (..), ScryptRecipient (..))
@@ -83,8 +103,9 @@ import Crypto.Age.Scrypt
     )
 import Crypto.Age.Scrypt qualified as Scrypt (Passphrase (..))
 import Crypto.Error (CryptoFailable (..))
+import Crypto.Hash (Blake2b_224 (..), Blake2b_256 (..), hashWith)
 import Crypto.PubKey.Ed25519 qualified as Ed25519
-import Data.Aeson (FromJSON (..), withObject, (.:))
+import Data.Aeson (FromJSON (..), Value (..), withObject, (.:))
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Key
 import Data.Aeson.KeyMap qualified as KeyMap
@@ -93,8 +114,11 @@ import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
 import Data.ByteString.Base16 qualified as B16
 import Data.ByteString.Char8 qualified as BC
+import Data.ByteString.Lazy qualified as BSL
+import Data.Char (isSpace)
 import Data.Maybe (fromMaybe)
 import Data.Text (Text)
+import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
 import Data.Word (Word8)
 import Options.Applicative
@@ -214,6 +238,118 @@ identityLabelsOfPayload payload =
                 pure (Key.toText <$> KeyMap.keys identities)
         _ -> fail "the payload fixture has no identities object"
 
+-- | A hex fixture's bytes, the whitespace around the hex ignored.
+readHexFixture :: FilePath -> IO ByteString
+readHexFixture name =
+    readFixture name
+        >>= either fail pure . B16.decode . BC.filter (not . isSpace)
+
+-- | The first line of a passphrase fixture, its line ending dropped.
+readPassphraseFixture :: FilePath -> IO ByteString
+readPassphraseFixture name = BC.takeWhile (/= '\n') <$> readFixture name
+
+-- | The label and stored key hash of every identity of a tx-sign payload.
+keyHashesOfPayload :: ByteString -> IO [(Text, Text)]
+keyHashesOfPayload payload =
+    forM (KeyMap.toList (identitiesOf payload)) $ \(label, identity) ->
+        case identity of
+            Object fields
+                | Just (String hash) <- KeyMap.lookup "keyHash" fields ->
+                    pure (Key.toText label, hash)
+            _ -> fail "an identity of the payload has no keyHash"
+
+-- | A text field of one identity's @source@ in a tx-sign payload.
+sourceFieldOfPayload :: Text -> Text -> ByteString -> IO Text
+sourceFieldOfPayload label field payload =
+    case KeyMap.lookup (Key.fromText label) (identitiesOf payload) of
+        Just (Object identity)
+            | Just (Object source) <- KeyMap.lookup "source" identity
+            , Just (String value) <- KeyMap.lookup (Key.fromText field) source ->
+                pure value
+        _ ->
+            fail
+                ("no source field " <> T.unpack field <> " for " <> T.unpack label)
+
+-- | The tx-sign payload with the stored key hash of one identity replaced.
+payloadWithKeyHash :: Text -> Text -> ByteString -> ByteString
+payloadWithKeyHash label hash =
+    editIdentity label (KeyMap.insert "keyHash" (String hash))
+
+{- | The tx-sign payload with one field of one identity's @source@
+replaced.
+-}
+payloadWithSourceField
+    :: Text -> Text -> Value -> ByteString -> ByteString
+payloadWithSourceField label field value =
+    editIdentity label $ adjustKey "source" inSource
+  where
+    inSource (Object source) =
+        Object (KeyMap.insert (Key.fromText field) value source)
+    inSource other = other
+
+-- | The tx-sign payload reduced to the identities of the given labels.
+payloadKeeping :: [Text] -> ByteString -> ByteString
+payloadKeeping labels =
+    mapIdentities
+        (KeyMap.filterWithKey (\name _ -> Key.toText name `elem` labels))
+
+{- | One tx-sign payload holding the identities of several, the first
+payload's other fields kept.
+-}
+mergedPayload :: [ByteString] -> ByteString
+mergedPayload [] = error "mergedPayload: nothing to merge"
+mergedPayload (first : others) =
+    mapIdentities
+        (\own -> foldr (KeyMap.union . identitiesOf) own others)
+        first
+
+-- | The identities object of a tx-sign payload.
+identitiesOf :: ByteString -> KeyMap.KeyMap Value
+identitiesOf payload = case Aeson.decodeStrict' payload of
+    Just (Object top)
+        | Just (Object vault) <- KeyMap.lookup "cardanoTxSignVault" top
+        , Just (Object identities) <- KeyMap.lookup "identities" vault ->
+            identities
+    _ -> error "identitiesOf: not a tx-sign payload"
+
+-- | A tx-sign payload with its identities object rewritten.
+mapIdentities
+    :: (KeyMap.KeyMap Value -> KeyMap.KeyMap Value)
+    -> ByteString
+    -> ByteString
+mapIdentities rewrite payload = case Aeson.decodeStrict' payload of
+    Just (Object top)
+        | Just (Object vault) <- KeyMap.lookup "cardanoTxSignVault" top ->
+            BSL.toStrict . Aeson.encode . Object $
+                KeyMap.insert
+                    "cardanoTxSignVault"
+                    ( Object
+                        ( KeyMap.insert
+                            "identities"
+                            (Object (rewrite (identitiesOf payload)))
+                            vault
+                        )
+                    )
+                    top
+    _ -> error "mapIdentities: not a tx-sign payload"
+
+-- | A map with the value under one key rewritten, if there is one.
+adjustKey :: Key.Key -> (v -> v) -> KeyMap.KeyMap v -> KeyMap.KeyMap v
+adjustKey key rewrite =
+    KeyMap.mapWithKey (\name v -> if name == key then rewrite v else v)
+
+-- | A tx-sign payload with one identity's fields rewritten.
+editIdentity
+    :: Text
+    -> (KeyMap.KeyMap Value -> KeyMap.KeyMap Value)
+    -> ByteString
+    -> ByteString
+editIdentity label edit =
+    mapIdentities (adjustKey (Key.fromText label) onFields)
+  where
+    onFields (Object fields) = Object (edit fields)
+    onFields other = other
+
 -- * Keys
 
 -- | A 32-byte seed from a first byte, made at run time.
@@ -241,6 +377,16 @@ publicOf secret = case Ed25519.secretKey secret of
     CryptoPassed key -> BA.convert (Ed25519.toPublic key)
     CryptoFailed e -> error ("publicOf: " <> show e)
 
+{- | blake2b-256: the digest a transaction id is, and the message a
+witness is a signature over.
+-}
+bodyHash :: ByteString -> ByteString
+bodyHash = BA.convert . hashWith Blake2b_256
+
+-- | blake2b-224 of a verification key: the key hash a vault stores.
+keyHashOf :: ByteString -> ByteString
+keyHashOf = BA.convert . hashWith Blake2b_224
+
 -- | Whether a signature verifies under a verification key.
 signatureVerifies :: ByteString -> ByteString -> ByteString -> Bool
 signatureVerifies vkey message signature =
@@ -254,16 +400,35 @@ witnessOf :: Signer IO -> ByteString -> IO DetachedWitness
 witnessOf signer body = signTxBody signer (TxBodyBytes body)
 
 {- | A key signs as the verification key expected: the witness carries
-it, and its signature verifies.
+it, and its signature verifies over the hash of the body.
 -}
-signsAs :: PaymentSigningKey -> ByteString -> IO ()
+signsAs :: OpenedKey -> ByteString -> IO ()
 signsAs key expected = do
     witness <- witnessOf (signerFromKey key) body
     detachedWitnessVKey witness `shouldBe` expected
     detachedWitnessSignature witness
-        `shouldSatisfy` signatureVerifies expected body
+        `shouldSatisfy` signatureVerifies expected (bodyHash body)
   where
     body = "the transaction body bytes"
+
+{- | The v1 plaintext of an opened key, when it is a plain key: the one
+form the vault writes.
+-}
+encodedV1Of :: OpenedKey -> Maybe ByteString
+encodedV1Of = \case
+    OpenedPlain key -> Just (encodeV1Payload key)
+    OpenedExtended _ -> Nothing
+
+{- | The signer of a vault file, as @cwt sign@ loads it: the passphrase
+on a descriptor, the identity by label.
+-}
+signerFromVaultFile
+    :: FilePath -> ByteString -> Maybe IdentitySelector -> IO (Signer IO)
+signerFromVaultFile path secret selector =
+    withPassphraseDescriptor (secret <> "\n") $ \fd ->
+        loadSignerFromSource
+            (VaultKey path (PassphraseDescriptor fd) selector)
+            >>= either (fail . T.unpack) pure
 
 -- * Passphrases and work factors
 

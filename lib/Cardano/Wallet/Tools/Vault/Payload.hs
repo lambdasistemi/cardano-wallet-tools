@@ -12,11 +12,14 @@ opens a vault and yields an ordinary key file.
 
 The reader accepts v1 and the @cardano-tx-tools@ @tx-sign vault@ JSON
 payload (@{"cardanoTxSignVault":{"version":1,"identities":{...}}}@)
-with a @cardano-cli-skey@ source, choosing the identity by label.
+with a @cardano-cli-skey@ or a @cardano-addresses-addr-xsk@ source,
+choosing the identity by label.
 -}
 module Cardano.Wallet.Tools.Vault.Payload
-    ( -- * Key
+    ( -- * Keys
       PaymentSigningKey
+    , ExtendedSigningKey
+    , OpenedKey (..)
     , signerFromKey
 
       -- * Writing
@@ -37,7 +40,16 @@ import Cardano.Wallet.Tools.Sign
     , Signer (..)
     , TxBodyBytes (..)
     )
-import Crypto.Error (CryptoFailable (..))
+import Codec.Binary.Bech32 qualified as Bech32
+import Crypto.ECC.Edwards25519 qualified as Edwards25519
+import Crypto.Error (CryptoFailable (..), throwCryptoError)
+import Crypto.Hash
+    ( Blake2b_224 (..)
+    , Blake2b_256 (..)
+    , Digest
+    , SHA512 (..)
+    , hashWith
+    )
 import Crypto.PubKey.Ed25519 qualified as Ed25519
 import Data.Aeson (FromJSON (..), Value, withObject, (.:), (.:?))
 import Data.Aeson qualified as Aeson
@@ -54,11 +66,34 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
 
--- | One Ed25519 payment signing key. It has no rendering of its bytes.
+{- | One plain Ed25519 payment signing key, as @cardano-cli@ writes it:
+the one key a vault is written from. It has no rendering of its bytes.
+-}
 newtype PaymentSigningKey = PaymentSigningKey Ed25519.SecretKey
 
 instance Show PaymentSigningKey where
     show _ = "<signing key>"
+
+{- | One extended BIP32-Ed25519 payment signing key, as
+@cardano-addresses@ writes it (@addr_xsk@): the scalar kL, the nonce
+prefix kR and the chain code, with the verification key kL·B. A vault is
+read to it and never written from it. It has no rendering of its bytes.
+-}
+data ExtendedSigningKey = ExtendedSigningKey
+    { extendedScalar :: !Edwards25519.Scalar
+    , extendedPrefix :: !ByteString
+    , extendedChainCode :: !ByteString
+    , extendedPublic :: !ByteString
+    }
+
+instance Show ExtendedSigningKey where
+    show _ = "<extended signing key>"
+
+-- | The key a vault opens to: a plain key or an extended one.
+data OpenedKey
+    = OpenedPlain PaymentSigningKey
+    | OpenedExtended ExtendedSigningKey
+    deriving stock (Show)
 
 -- | A tx-sign identity label.
 newtype IdentitySelector = IdentitySelector Text
@@ -70,22 +105,60 @@ data VaultPayloadRefusal
       PayloadNotASigningKey
     | -- | the chosen identity is not among the available labels
       PayloadIdentityMissing (Maybe IdentitySelector) [Text]
-    | -- | the chosen identity's source kind is not a @cardano-cli@ key
+    | -- | the chosen identity's source kind is not one this reader reads
       PayloadSourceUnsupported Text
+    | -- | the chosen identity stores a key hash that is not its key's
+      PayloadKeyHashMismatch Text
     deriving stock (Eq, Show)
 
--- | The signer for a key: one detached vkey witness over a body.
-signerFromKey :: (Applicative m) => PaymentSigningKey -> Signer m
-signerFromKey (PaymentSigningKey secret) =
+{- | The signer for a key: one detached vkey witness over a body. The
+witness signs blake2b-256 of the body bytes it is given, the digest a
+transaction id is.
+-}
+signerFromKey :: (Applicative m) => OpenedKey -> Signer m
+signerFromKey key =
     Signer $ \(TxBodyBytes body) ->
         pure
             DetachedWitness
-                { detachedWitnessVKey = BA.convert public
+                { detachedWitnessVKey = verificationKey key
                 , detachedWitnessSignature =
-                    BA.convert (Ed25519.sign secret public body)
+                    signMessage key (BA.convert (hashWith Blake2b_256 body))
                 }
-  where
-    public = Ed25519.toPublic secret
+
+-- | The 32-byte verification key of a key.
+verificationKey :: OpenedKey -> ByteString
+verificationKey = \case
+    OpenedPlain (PaymentSigningKey secret) ->
+        BA.convert (Ed25519.toPublic secret)
+    OpenedExtended extended -> extendedPublic extended
+
+{- | The Ed25519 signature of a message, 64 bytes, verifying under the
+key's verification key. An extended key signs by the rule
+cardano-crypto uses: the nonce comes from kR, the response from kL.
+-}
+signMessage :: OpenedKey -> ByteString -> ByteString
+signMessage = \case
+    OpenedPlain (PaymentSigningKey secret) ->
+        BA.convert . Ed25519.sign secret (Ed25519.toPublic secret)
+    OpenedExtended
+        ExtendedSigningKey{extendedScalar, extendedPrefix, extendedPublic} ->
+            \message ->
+                let nonce = scalarOfDigest (hashWith SHA512 (extendedPrefix <> message))
+                    commitment = Edwards25519.pointEncode (Edwards25519.toPoint nonce)
+                    challenge =
+                        scalarOfDigest
+                            (hashWith SHA512 (commitment <> extendedPublic <> message))
+                    response =
+                        Edwards25519.scalarAdd
+                            nonce
+                            (Edwards25519.scalarMul challenge extendedScalar)
+                in  commitment <> Edwards25519.scalarEncode response
+
+{- | A scalar from a SHA-512 digest, reduced modulo the group order. A
+64-byte input always decodes.
+-}
+scalarOfDigest :: Digest SHA512 -> Edwards25519.Scalar
+scalarOfDigest = throwCryptoError . Edwards25519.scalarDecodeLong
 
 -- | The v1 plaintext: the key's @cardano-cli@ text envelope.
 encodeV1Payload :: PaymentSigningKey -> ByteString
@@ -146,23 +219,23 @@ which the selected identity (else the single one) is taken.
 decodeVaultPayload
     :: Maybe IdentitySelector
     -> ByteString
-    -> Either VaultPayloadRefusal PaymentSigningKey
+    -> Either VaultPayloadRefusal OpenedKey
 decodeVaultPayload selector plaintext =
     case Aeson.decodeStrict' plaintext of
         Just (Aeson.Object top)
             | Just vault <- KeyMap.lookup "cardanoTxSignVault" top ->
                 txSignKey selector vault
-        Just value -> keyFromEnvelopeValue value
+        Just value -> OpenedPlain <$> keyFromEnvelopeValue value
         Nothing -> Left PayloadNotASigningKey
 
 -- | The parts of a tx-sign vault this reader uses.
 data TxSignVault = TxSignVault Int (KeyMap TxSignIdentity)
 
--- | One identity: its own label and where its key comes from.
-data TxSignIdentity = TxSignIdentity Text TxSignSource
+-- | One identity: its own label, the key hash it stores, where its key comes from.
+data TxSignIdentity = TxSignIdentity Text Text TxSignSource
 
--- | A source kind, and the envelope it carries when it is a key file.
-data TxSignSource = TxSignSource Text (Maybe Value)
+-- | A source kind, with the key envelope or the bech32 key it carries.
+data TxSignSource = TxSignSource Text (Maybe Value) (Maybe Text)
 
 instance FromJSON TxSignVault where
     parseJSON = withObject "TxSignVault" $ \o ->
@@ -170,17 +243,23 @@ instance FromJSON TxSignVault where
 
 instance FromJSON TxSignIdentity where
     parseJSON = withObject "TxSignIdentity" $ \o ->
-        TxSignIdentity <$> o .: "label" <*> o .: "source"
+        TxSignIdentity
+            <$> o .: "label"
+            <*> o .: "keyHash"
+            <*> o .: "source"
 
 instance FromJSON TxSignSource where
     parseJSON = withObject "TxSignSource" $ \o ->
-        TxSignSource <$> o .: "kind" <*> o .:? "keyEnvelope"
+        TxSignSource
+            <$> o .: "kind"
+            <*> o .:? "keyEnvelope"
+            <*> o .:? "bech32"
 
 -- | The key of the chosen identity of a tx-sign vault value.
 txSignKey
     :: Maybe IdentitySelector
     -> Value
-    -> Either VaultPayloadRefusal PaymentSigningKey
+    -> Either VaultPayloadRefusal OpenedKey
 txSignKey selector value = do
     TxSignVault version identities <-
         maybe (Left PayloadNotASigningKey) Right $
@@ -188,15 +267,22 @@ txSignKey selector value = do
     if version == 1 && all labelled (KeyMap.toList identities)
         then Right ()
         else Left PayloadNotASigningKey
-    TxSignIdentity _ (TxSignSource kind envelope) <-
+    TxSignIdentity label keyHash (TxSignSource kind envelope bech32) <-
         chosen identities
-    case (kind, envelope) of
-        ("cardano-cli-skey", Just keyEnvelope) ->
-            keyFromEnvelopeValue keyEnvelope
-        ("cardano-cli-skey", Nothing) -> Left PayloadNotASigningKey
+    key <- case (kind, envelope, bech32) of
+        ("cardano-cli-skey", Just keyEnvelope, _) ->
+            OpenedPlain <$> keyFromEnvelopeValue keyEnvelope
+        ("cardano-cli-skey", Nothing, _) -> Left PayloadNotASigningKey
+        ("cardano-addresses-addr-xsk", _, Just text) ->
+            OpenedExtended <$> keyFromAddrXsk text
+        ("cardano-addresses-addr-xsk", _, Nothing) ->
+            Left PayloadNotASigningKey
         _ -> Left (PayloadSourceUnsupported kind)
+    if storesHashOf keyHash key
+        then Right key
+        else Left (PayloadKeyHashMismatch label)
   where
-    labelled (name, TxSignIdentity label _) = Key.toText name == label
+    labelled (name, TxSignIdentity label _ _) = Key.toText name == label
     chosen identities =
         let labels = sort (Key.toText <$> KeyMap.keys identities)
             missing = Left (PayloadIdentityMissing selector labels)
@@ -207,6 +293,43 @@ txSignKey selector value = do
                 Nothing -> case KeyMap.elems identities of
                     [only] -> Right only
                     _ -> missing
+
+{- | Whether a stored hex key hash is blake2b-224 of the verification
+key of the key; a stored value that is not hex is no match.
+-}
+storesHashOf :: Text -> OpenedKey -> Bool
+storesHashOf stored key =
+    B16.decode (TE.encodeUtf8 stored)
+        == Right (BA.convert (hashWith Blake2b_224 (verificationKey key)))
+
+{- | The extended key a @cardano-addresses@ @addr_xsk@ bech32 string holds:
+96 bytes, kL and kR then the chain code.
+-}
+keyFromAddrXsk
+    :: Text -> Either VaultPayloadRefusal ExtendedSigningKey
+keyFromAddrXsk text = do
+    (prefix, dataPart) <- refuseLeft (Bech32.decodeLenient text)
+    bytes <- case Bech32.dataPartToBytes dataPart of
+        Just raw
+            | Bech32.humanReadablePartToText prefix == "addr_xsk"
+            , BS.length raw == 96 ->
+                Right raw
+        _ -> Left PayloadNotASigningKey
+    let (scalarBytes, afterScalar) = BS.splitAt 32 bytes
+        (prefixBytes, chainCode) = BS.splitAt 32 afterScalar
+    scalar <- case Edwards25519.scalarDecodeLong scalarBytes of
+        CryptoPassed decoded -> Right decoded
+        CryptoFailed _ -> Left PayloadNotASigningKey
+    Right
+        ExtendedSigningKey
+            { extendedScalar = scalar
+            , extendedPrefix = prefixBytes
+            , extendedChainCode = chainCode
+            , extendedPublic =
+                Edwards25519.pointEncode (Edwards25519.toPoint scalar)
+            }
+  where
+    refuseLeft = either (const (Left PayloadNotASigningKey)) Right
 
 -- | One line naming the refusal, carrying no key.
 renderVaultPayloadRefusal :: VaultPayloadRefusal -> Text
@@ -223,3 +346,7 @@ renderVaultPayloadRefusal = \case
             <> T.intercalate ", " labels
     PayloadSourceUnsupported kind ->
         "unsupported vault source kind: " <> kind
+    PayloadKeyHashMismatch label ->
+        "vault identity `"
+            <> label
+            <> "` stores a key hash that is not the hash of its signing key"

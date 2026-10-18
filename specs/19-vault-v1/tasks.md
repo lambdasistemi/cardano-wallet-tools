@@ -13,6 +13,6 @@
 
 ## Slice tx-sign-correction
 
-- [ ] addr-xsk-tx-sign-source — tx-sign `cardano-addresses-addr-xsk` identities open to an extended key that signs; witness verifies under its vkey.
-- [ ] tx-sign-key-hash-check — opening a tx-sign identity refuses a stored `keyHash` that is not blake2b-224 of its vkey.
-- [ ] witness-over-body-hash — every `cwt` witness signs blake2b-256 of the body, equal to the `cardano-cli` witness for the same key and body.
+- [X] addr-xsk-tx-sign-source — tx-sign `cardano-addresses-addr-xsk` identities open to an extended key that signs; witness verifies under its vkey.
+- [X] tx-sign-key-hash-check — opening a tx-sign identity refuses a stored `keyHash` that is not blake2b-224 of its vkey.
+- [X] witness-over-body-hash — every `cwt` witness signs blake2b-256 of the body, equal to the `cardano-cli` witness for the same key and body.

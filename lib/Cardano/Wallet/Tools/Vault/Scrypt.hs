@@ -25,6 +25,7 @@ import Cardano.Wallet.Tools.Vault.Passphrase
     )
 import Cardano.Wallet.Tools.Vault.Payload
     ( IdentitySelector
+    , OpenedKey
     , PaymentSigningKey
     , VaultPayloadRefusal (..)
     , decodeVaultPayload
@@ -94,7 +95,7 @@ openVault
     :: Maybe IdentitySelector
     -> Passphrase
     -> ByteString
-    -> Either VaultRefusal PaymentSigningKey
+    -> Either VaultRefusal OpenedKey
 openVault selector passphrase vaultBytes =
     case Age.decrypt identities vaultBytes of
         Left _ -> Left VaultNotOpened

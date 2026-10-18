@@ -19,9 +19,11 @@ import Cardano.Wallet.Tools.Vault.Passphrase (Passphrase)
 import Cardano.Wallet.Tools.Vault.Payload
 import Cardano.Wallet.Tools.Vault.Scrypt (openVault, sealVault)
 import Control.Monad (forM, forM_)
-import Data.Aeson (Value, object, (.=))
+import Data.Aeson (FromJSON (..), Value (..), object, (.=))
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Key
+import Data.Aeson.KeyMap qualified as KeyMap
+import Data.Aeson.Types qualified as Aeson
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
 import Data.ByteString.Base16 qualified as B16
@@ -71,10 +73,9 @@ txSignPayloadOf version identities =
         object
             [ "label" .= label
             , "network" .= ("preprod" :: Text)
-            , "keyHash" .= keyHashOf source
+            , "keyHash" .= storedKeyHash source
             , "source" .= source
             ]
-    keyHashOf _ = T.replicate 56 "0"
 
 -- | A cardano-cli-skey source holding an envelope.
 cliSource :: ByteString -> Value
@@ -87,12 +88,25 @@ cliSource envelope =
                 (Aeson.decodeStrict' envelope :: Maybe Value)
         ]
 
--- | A source of the kind the reader names and refuses.
-addressesSource :: Value
-addressesSource =
+{- | The key hash a vault stores for a source: blake2b-224 of the
+verification key of the key it holds, computed here; a source holding
+no key has none to match.
+-}
+storedKeyHash :: Value -> Text
+storedKeyHash source =
+    fromMaybe (T.replicate 56 "0") $ do
+        Object fields <- Just source
+        held <- KeyMap.lookup "keyEnvelope" fields
+        envelope <- Aeson.parseMaybe parseJSON held
+        secret <- either (const Nothing) Just (secretOfEnvelope envelope)
+        pure (TE.decodeUtf8 (B16.encode (keyHashOf (publicOf secret))))
+
+-- | A source of a kind the reader does not read.
+foreignSource :: Value
+foreignSource =
     object
-        [ "kind" .= ("cardano-addresses-addr-xsk" :: Text)
-        , "bech32" .= ("not parsed: the kind is refused first" :: Text)
+        [ "kind" .= ("hardware-wallet" :: Text)
+        , "path" .= ("not read: the kind is not supported" :: Text)
         ]
 
 {- | The fixture's identities: label and verification-key bytes, labels
@@ -130,7 +144,7 @@ keyEnvelope = describe "key envelope" $ do
         skey <- readFixture "payment.skey"
         vkey <- verificationKeyOfFixture "payment.vkey"
         key <- either (fail . show) pure (parseSigningKeyEnvelope skey)
-        signsAs key vkey
+        signsAs (OpenedPlain key) vkey
 
     it "reads back the key it wrote, for any key" $
         property $
@@ -146,16 +160,16 @@ keyEnvelope = describe "key envelope" $ do
     it "reads the v1 plaintext through the vault reader, selector or not" $ do
         let key = keyFromSeed (seedKey 0x61)
         fmap
-            encodeV1Payload
+            encodedV1Of
             (decodeVaultPayload Nothing (encodeV1Payload key))
-            `shouldBe` Right (encodeV1Payload key)
+            `shouldBe` Right (Just (encodeV1Payload key))
         fmap
-            encodeV1Payload
+            encodedV1Of
             ( decodeVaultPayload
                 (Just (IdentitySelector "alice"))
                 (encodeV1Payload key)
             )
-            `shouldBe` Right (encodeV1Payload key)
+            `shouldBe` Right (Just (encodeV1Payload key))
 
     it "reads both payment key types a plaintext key file may carry"
         $ forM_
@@ -271,9 +285,11 @@ txSignPayload = describe "tx-sign payload" $ do
     it "gives every identity a different key" $ do
         payload <- readFixture "tx-sign/payload.json"
         identities <- fixtureIdentities
-        encoded <- forM identities $ \(label, _) ->
-            either (fail . show) (pure . encodeV1Payload) $
-                decodeVaultPayload (Just (IdentitySelector label)) payload
+        encoded <- forM identities $ \(label, _) -> do
+            opened <-
+                either (fail . show) pure $
+                    decodeVaultPayload (Just (IdentitySelector label)) payload
+            maybe (fail "a plain key was expected") pure (encodedV1Of opened)
         allDistinct encoded `shouldBe` True
         length identities `shouldSatisfy` (> 2)
 
@@ -324,19 +340,6 @@ txSignPayload = describe "tx-sign payload" $ do
             `shouldSatisfy` either (const True) (const False)
 
     it
-        "refuses an identity whose source is not a cardano-cli key, by kind"
-        $ do
-            skey <- readFixture "tx-sign/bob.skey"
-            let payload =
-                    txSignPayloadOf
-                        1
-                        [("bob", cliSource skey), ("xsk", addressesSource)]
-            decodeVaultPayload (Just (IdentitySelector "xsk")) payload
-                `shouldSatisfy` either
-                    (== PayloadSourceUnsupported "cardano-addresses-addr-xsk")
-                    (const False)
-
-    it
         "refuses an unknown source kind by its kind, even holding a key envelope"
         $ do
             skey <- readFixture "tx-sign/bob.skey"
@@ -361,7 +364,7 @@ txSignPayload = describe "tx-sign payload" $ do
         let payload =
                 txSignPayloadOf
                     1
-                    [("bob", cliSource skey), ("xsk", addressesSource)]
+                    [("bob", cliSource skey), ("foreign", foreignSource)]
         key <-
             either (fail . show) pure $
                 decodeVaultPayload (Just (IdentitySelector "bob")) payload
@@ -382,7 +385,7 @@ txSignPayload = describe "tx-sign payload" $ do
                                             .= object
                                                 [ "label" .= ("mallory" :: Text)
                                                 , "network" .= ("preprod" :: Text)
-                                                , "keyHash" .= T.replicate 56 "0"
+                                                , "keyHash" .= storedKeyHash (cliSource skey)
                                                 , "source" .= cliSource skey
                                                 ]
                                         ]
@@ -405,12 +408,15 @@ txSignPayload = describe "tx-sign payload" $ do
         stock <- readFixture "tx-sign/vault.age"
         line <- readFixture "tx-sign/passphrase"
         let stockPassphrase = BC.takeWhile (/= '\n') line
-        key <-
+        opened <-
             either (fail . T.unpack . renderVaultRefusal) pure $
                 openVault
                     (Just (IdentitySelector "bob"))
                     (passphrase stockPassphrase)
                     stock
+        key <- case opened of
+            OpenedPlain plain -> pure plain
+            OpenedExtended _ -> fail "bob holds a cardano-cli key"
         vault <-
             sealVault (factor 10) (passphrase "cwt interop passphrase") key
                 >>= either (fail . show) pure

@@ -1,0 +1,20 @@
+{
+  "cardanoTxSignVault": {
+    "identities": {
+      "core_development": {
+        "keyHash": "675947ce362117f0c9a762a8d4421cbe1ce2daad97dabb4b26bd904c",
+        "label": "core_development",
+        "network": "preprod",
+        "source": {
+          "keyEnvelope": {
+            "cborHex": "582083c69e0facc37e938558a50b4335f0ca9855857bb5625f583a68464f54496bde",
+            "description": "Payment Signing Key",
+            "type": "PaymentSigningKeyShelley_ed25519"
+          },
+          "kind": "cardano-cli-skey"
+        }
+      }
+    },
+    "version": 1
+  }
+}

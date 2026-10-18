@@ -5,14 +5,14 @@ exact Haskell spelling of auxiliary types is the commit owner's.
 
 ## `Vault.Payload`
 - `encodeV1Payload :: key:PaymentSigningKey -> ByteString`
-- `decodeVaultPayload :: selector:Maybe IdentitySelector -> plaintext:ByteString -> Either VaultPayloadRefusal PaymentSigningKey`
+- `decodeVaultPayload :: selector:Maybe IdentitySelector -> plaintext:ByteString -> Either VaultPayloadRefusal OpenedKey`
 - `parseSigningKeyEnvelope :: envelope:ByteString -> Either VaultPayloadRefusal PaymentSigningKey`
-- `signerFromKey :: key:PaymentSigningKey -> Signer m` (Applicative m) — signs blake2b-256 of the body bytes it is given, with the key's Ed25519 or extended Ed25519 signing rule
+- `signerFromKey :: key:OpenedKey -> Signer m` (Applicative m) — signs blake2b-256 of the body bytes it is given, with the key's Ed25519 or extended Ed25519 signing rule
 
 ## `Vault.Scrypt`
 - `vaultWorkFactorCap :: WorkFactor`
 - `sealVault :: workFactor:WorkFactor -> passphrase:Passphrase -> key:PaymentSigningKey -> IO (Either VaultRefusal ByteString)` — effect: salt entropy only
-- `openVault :: selector:Maybe IdentitySelector -> passphrase:Passphrase -> vaultBytes:ByteString -> Either VaultRefusal PaymentSigningKey` — pure
+- `openVault :: selector:Maybe IdentitySelector -> passphrase:Passphrase -> vaultBytes:ByteString -> Either VaultRefusal OpenedKey` — pure
 
 ## `Vault.File`
 - `withVaultFile :: path:FilePath -> write:(Handle -> IO a) -> IO (Either VaultRefusal a)`

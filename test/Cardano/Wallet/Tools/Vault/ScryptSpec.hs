@@ -59,8 +59,9 @@ sealedAt n pass key =
 
 -- | Opened to the key it was sealed from, compared by the plaintext it writes.
 opensTo
-    :: PaymentSigningKey -> Either VaultRefusal PaymentSigningKey -> Bool
-opensTo key = either (const False) ((== encodeV1Payload key) . encodeV1Payload)
+    :: PaymentSigningKey -> Either VaultRefusal OpenedKey -> Bool
+opensTo key =
+    either (const False) ((== Just (encodeV1Payload key)) . encodedV1Of)
 
 sealAndOpen :: Spec
 sealAndOpen = describe "seal and open" $ do

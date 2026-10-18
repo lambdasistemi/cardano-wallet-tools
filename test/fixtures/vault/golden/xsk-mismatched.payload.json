@@ -1,0 +1,17 @@
+{
+  "cardanoTxSignVault": {
+    "identities": {
+      "addr_xsk_fixture": {
+        "description": "cardano-addresses payment key",
+        "keyHash": "675947ce362117f0c9a762a8d4421cbe1ce2daad97dabb4b26bd904c",
+        "label": "addr_xsk_fixture",
+        "network": "preprod",
+        "source": {
+          "bech32": "addr_xsk12pzle3450wwj2djlsvvpwdad0akp97ty70p4r57cjwctqdnr8pppcz4awzey5flzj3vc6utscunxufq7udekvu29ha5qgpk4rw6q6nudgm3llqq8ynvpedekfg5d8hczz6snz34lkf2heu3qkq2e0xzspg90765n",
+          "kind": "cardano-addresses-addr-xsk"
+        }
+      }
+    },
+    "version": 1
+  }
+}
