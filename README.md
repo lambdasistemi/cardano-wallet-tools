@@ -41,6 +41,34 @@ See [`docs/design.md`](docs/design.md) and the project
 [bundle v1](docs/bundle.md) file, its checks (`cwt bundle check`) and the
 submit planner are in the `cardano-wallet-tools:ledger` sublibrary.
 
+## FIDO2 vault
+
+A signing key can be sealed to one or more FIDO2 authenticators instead of
+a passphrase. The vault is a standard age file whose recipients are
+`age1fido2-hmac1…` keys, wrapped by the `age-plugin-fido2-hmac` plugin:
+the nix-built `cwt` brings the plugin, any other build needs it on the
+`PATH`. The PIN and the touch are asked through the terminal.
+
+```bash
+# seal a key to two authenticators (repeat --recipient for each)
+cwt vault create --fido2 \
+  --recipient age1fido2-hmac1… --recipient age1fido2-hmac1… \
+  --signing-key payment.skey --out payment.vault
+
+# sign with whichever one is at hand; identity.txt holds its identity
+cwt sign --fido2-vault payment.vault --fido2-identity identity.txt \
+  < tx.cbor.hex > signed.cbor.hex
+
+# lost one? open with a surviving identity, seal to the new set
+cwt vault rekey --vault payment.vault --fido2-identity identity.txt \
+  --recipient age1fido2-hmac1… --recipient age1fido2-hmac1… \
+  --out renewed.vault
+```
+
+The output file must not exist and is written with mode 0600. `rekey`
+never changes the old vault. Stock `age -d -i identity.txt payment.vault`
+opens the same file.
+
 ## Development
 
 Everything runs inside the Nix dev shell:

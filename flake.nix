@@ -97,6 +97,10 @@
               {
                 packages.cardano-wallet-tools.components.tests.spec.build-tools =
                   [ pkgs.age ];
+                # No FIDO2 example is pending or skipped: a pending or an
+                # empty selection fails the check.
+                packages.cardano-wallet-tools.components.tests.spec.testFlags =
+                  [ "--fail-on=empty,pending" ];
               }
             ];
             inputMap = {
@@ -107,22 +111,69 @@
           components = pkg.components;
           unitTests = components.tests.spec;
           cwt = components.exes.cwt;
-          # Stock age is a test input: the interop examples decrypt vaults
-          # with it and fail when it is missing from PATH. cwt is another:
-          # the command-line specs run the executable the package builds.
+          fakeFido2Plugin = components.exes.cwt-fake-fido2-plugin;
+          # The FIDO2 vault runs the age plugin by name from the PATH, so
+          # the packaged cwt carries the real plugin as a runtime
+          # dependency, after the user's own PATH.
+          cwtWithPlugin = pkgs.symlinkJoin {
+            name = "cwt";
+            paths = [ cwt ];
+            nativeBuildInputs = [ pkgs.makeWrapper ];
+            postBuild = ''
+              wrapProgram $out/bin/cwt \
+                --suffix PATH : ${lib.makeBinPath [ pkgs.age-plugin-fido2-hmac ]}
+            '';
+            meta.mainProgram = "cwt";
+          };
+          # The packaged cwt finds the real plugin with nothing else on the
+          # PATH, and the unpackaged one does not (control). A recipient the
+          # fake plugin made is syntactically a fido2-hmac recipient and is
+          # rejected by the real plugin, so no authenticator is involved.
+          pluginRuntimeCheck = pkgs.runCommand "cwt-finds-the-fido2-plugin" {
+            nativeBuildInputs = [ fakeFido2Plugin ];
+          } ''
+            set -euo pipefail
+            export HOME="$TMPDIR"
+            key=5820$(printf '01%.0s' $(seq 32))
+            printf '{"type":"PaymentSigningKeyShelley_ed25519","description":"","cborHex":"%s"}' "$key" > key.skey
+            made=$(cwt-fake-fido2-plugin --keygen fido2-hmac probe)
+            read -r recipient <<< "$made"
+            probe() {
+              set +e
+              env -i PATH=${pkgs.coreutils}/bin "$1" vault create --fido2 \
+                --signing-key key.skey --recipient "$recipient" --out "$2" 2> "$2.err"
+              status=$?
+              set -e
+              cat "$2.err"
+              test "$status" -ne 0
+            }
+            probe ${cwtWithPlugin}/bin/cwt packaged
+            if grep -q "plugin not found" packaged.err; then
+              echo "the packaged cwt did not find the real plugin"; exit 1
+            fi
+            probe ${cwt}/bin/cwt bare
+            grep -q "plugin not found on the PATH: age-plugin-fido2-hmac" bare.err
+            test ! -e packaged -a ! -e bare
+            touch $out
+          '';
+          # Stock age, the fake plugin and cwt are test inputs: the FIDO2
+          # examples decrypt vaults with age, link the fake plugin under a
+          # plugin name of their own, and run cwt. They fail, never skip,
+          # when one is missing from PATH.
           unitTestsApp = pkgs.writeShellApplication {
             name = "unit-tests";
-            runtimeInputs = [ pkgs.age cwt ];
+            runtimeInputs = [ pkgs.age fakeFido2Plugin cwt ];
             text = ''exec ${unitTests}/bin/spec "$@"'';
           };
         in {
           packages = {
             default = components.library;
             unit-tests = unitTests;
-            cwt = cwt;
+            cwt = cwtWithPlugin;
           };
           checks = {
             unit = pkg.checks.spec;
+            plugin-runtime = pluginRuntimeCheck;
           };
           apps = {
             unit-tests = {
@@ -131,7 +182,7 @@
             };
             cwt = {
               type = "app";
-              program = "${cwt}/bin/cwt";
+              program = "${cwtWithPlugin}/bin/cwt";
             };
           };
           devShells.default = project.shell;

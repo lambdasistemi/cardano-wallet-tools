@@ -63,28 +63,38 @@ library
   import:          warnings, language
   hs-source-dirs:  lib
   exposed-modules:
+    Cardano.Wallet.Tools.Cli.Fido2
     Cardano.Wallet.Tools.Cli.Vault
     Cardano.Wallet.Tools.Selection.Collateral
     Cardano.Wallet.Tools.Selection.Strategy
     Cardano.Wallet.Tools.Sign
     Cardano.Wallet.Tools.Sign.AttachWitness
     Cardano.Wallet.Tools.Sign.Witness
+    Cardano.Wallet.Tools.Vault.Fido2
     Cardano.Wallet.Tools.Vault.File
     Cardano.Wallet.Tools.Vault.Passphrase
     Cardano.Wallet.Tools.Vault.Payload
+    Cardano.Wallet.Tools.Vault.Plugin
     Cardano.Wallet.Tools.Vault.Scrypt
+
+  other-modules:
+    Cardano.Wallet.Tools.Vault.Plugin.Payload
+    Cardano.Wallet.Tools.Vault.Plugin.Process
 
   build-depends:
     , aeson
     , age
+    , attoparsec
     , base                  >=4.18 && <5
     , base16-bytestring
     , bech32
     , bytestring
     , containers
     , crypton
+    , filepath
     , memory
     , optparse-applicative
+    , process
     , text
     , transformers
     , unix
@@ -134,12 +144,27 @@ executable cwt
     , optparse-applicative
     , text
 
+-- Test double: speaks the age plugin protocol for the specs. The
+-- package never installs it under the name of a real plugin.
+executable cwt-fake-fido2-plugin
+  import:         warnings, language
+  hs-source-dirs: test/fake-plugin
+  main-is:        Main.hs
+  build-depends:
+    , base        >=4.18 && <5
+    , bech32
+    , bytestring
+    , crypton
+    , memory
+    , text
+
 test-suite spec
   import:             warnings, language
   type:               exitcode-stdio-1.0
   hs-source-dirs:     test
   main-is:            Spec.hs
   other-modules:
+    Cardano.Wallet.Tools.Cli.Fido2Spec
     Cardano.Wallet.Tools.Cli.VaultSpec
     Cardano.Wallet.Tools.Ledger.BundleSpec
     Cardano.Wallet.Tools.Ledger.Cli.BundleSpec
@@ -151,23 +176,31 @@ test-suite spec
     Cardano.Wallet.Tools.Sign.AttachWitnessSpec
     Cardano.Wallet.Tools.Sign.WitnessSpec
     Cardano.Wallet.Tools.Vault.BodyHashSpec
+    Cardano.Wallet.Tools.Vault.FakePluginSpec
+    Cardano.Wallet.Tools.Vault.Fido2InteropSpec
+    Cardano.Wallet.Tools.Vault.Fido2Spec
     Cardano.Wallet.Tools.Vault.FileSpec
     Cardano.Wallet.Tools.Vault.InteropSpec
     Cardano.Wallet.Tools.Vault.PassphraseSpec
     Cardano.Wallet.Tools.Vault.PayloadSpec
+    Cardano.Wallet.Tools.Vault.PluginSpec
     Cardano.Wallet.Tools.Vault.ScryptSpec
     Cardano.Wallet.Tools.Vault.TxSignIdentitySpec
+    Support.FakePlugin
+    Support.Fido2
     Support.Ledger
     Support.LedgerScenario
     Support.Vault
 
   build-tool-depends:
     , cardano-wallet-tools:cwt
+    , cardano-wallet-tools:cwt-fake-fido2-plugin
     , hspec-discover:hspec-discover
 
   build-depends:
     , aeson
     , age
+    , attoparsec
     , base
     , base16-bytestring
     , bech32
