@@ -10,3 +10,9 @@
 - [X] fixtures-with-provenance — cardano-cli key pair and tx-sign vault fixtures with recorded commands.
 - [X] age-in-test-environment — stock `age` in dev shell, hosted unit-tests app and `checks.unit`.
 - [X] ported-vault-spec — singular VaultSpec and passphrase cases ported under `vault v1`, plus acceptance examples.
+
+## Slice tx-sign-correction
+
+- [ ] addr-xsk-tx-sign-source — tx-sign `cardano-addresses-addr-xsk` identities open to an extended key that signs; witness verifies under its vkey.
+- [ ] tx-sign-key-hash-check — opening a tx-sign identity refuses a stored `keyHash` that is not blake2b-224 of its vkey.
+- [ ] witness-over-body-hash — every `cwt` witness signs blake2b-256 of the body, equal to the `cardano-cli` witness for the same key and body.

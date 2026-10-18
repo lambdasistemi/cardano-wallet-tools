@@ -7,7 +7,7 @@ exact Haskell spelling of auxiliary types is the commit owner's.
 - `encodeV1Payload :: key:PaymentSigningKey -> ByteString`
 - `decodeVaultPayload :: selector:Maybe IdentitySelector -> plaintext:ByteString -> Either VaultPayloadRefusal PaymentSigningKey`
 - `parseSigningKeyEnvelope :: envelope:ByteString -> Either VaultPayloadRefusal PaymentSigningKey`
-- `signerFromKey :: key:PaymentSigningKey -> Signer m` (Applicative m)
+- `signerFromKey :: key:PaymentSigningKey -> Signer m` (Applicative m) — signs blake2b-256 of the body bytes it is given, with the key's Ed25519 or extended Ed25519 signing rule
 
 ## `Vault.Scrypt`
 - `vaultWorkFactorCap :: WorkFactor`
