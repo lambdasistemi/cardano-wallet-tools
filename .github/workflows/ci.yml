@@ -42,9 +42,11 @@ jobs:
       - name: Build
         run: nix build --quiet
       - name: Test
-        run: nix run .#unit-tests --quiet
+        run: nix run .#unit-tests --quiet -- --fail-on=empty,pending
       - name: Unit check
         run: nix build --quiet .#checks.x86_64-linux.unit
+      - name: Packaged cwt finds the FIDO2 plugin
+        run: nix build --quiet .#checks.x86_64-linux.plugin-runtime
       - name: Cabal version matches manifest
         run: |
           set -euo pipefail
