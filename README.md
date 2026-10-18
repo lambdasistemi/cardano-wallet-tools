@@ -37,7 +37,9 @@ honest shortfall reporting.
   signs via CIP-30; the CLI can optionally sign via an age vault.
 
 See [`docs/design.md`](docs/design.md) and the project
-[constitution](.specify/memory/constitution.md).
+[constitution](.specify/memory/constitution.md). The
+[bundle v1](docs/bundle.md) file, its checks (`cwt bundle check`) and the
+submit planner are in the `cardano-wallet-tools:ledger` sublibrary.
 
 ## Development
 
