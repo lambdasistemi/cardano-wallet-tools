@@ -21,6 +21,9 @@ markdown_extensions:
   - admonition
   - pymdownx.superfences
   - pymdownx.highlight
+  - pymdownx.snippets:
+      base_path: .
+      check_paths: true
   - tables
   - toc:
       permalink: true
@@ -28,3 +31,4 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Design: design.md
+  - Bundle format: bundle.md

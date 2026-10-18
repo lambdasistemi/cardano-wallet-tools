@@ -20,6 +20,10 @@ extra-doc-files:
   README.md
 
 extra-source-files:
+  test/fixtures/bundle/*.json
+  test/fixtures/bundle/*.md
+  test/fixtures/bundle/golden/*.hex
+  test/fixtures/bundle/golden/*.skey
   test/fixtures/vault/*.md
   test/fixtures/vault/*.skey
   test/fixtures/vault/*.vkey
@@ -85,6 +89,34 @@ library
     , transformers
     , unix
 
+library ledger
+  import:          warnings, language
+  visibility:      public
+  hs-source-dirs:  ledger
+  exposed-modules:
+    Cardano.Wallet.Tools.Ledger.Bundle
+    Cardano.Wallet.Tools.Ledger.Cli.Bundle
+    Cardano.Wallet.Tools.Ledger.Envelope
+    Cardano.Wallet.Tools.Ledger.Submit
+    Cardano.Wallet.Tools.Ledger.Witness
+
+  build-depends:
+    , aeson
+    , base                   >=4.18 && <5
+    , base16-bytestring
+    , bech32
+    , bytestring
+    , cardano-crypto-class
+    , cardano-ledger-api
+    , cardano-ledger-binary
+    , cardano-ledger-conway
+    , cardano-ledger-core
+    , cardano-wallet-tools
+    , containers
+    , microlens
+    , optparse-applicative
+    , text
+
 executable cwt
   import:         warnings, language
   hs-source-dirs: app
@@ -98,6 +130,7 @@ executable cwt
     , base16-bytestring
     , bytestring
     , cardano-wallet-tools
+    , cardano-wallet-tools:ledger
     , optparse-applicative
     , text
 
@@ -108,6 +141,11 @@ test-suite spec
   main-is:            Spec.hs
   other-modules:
     Cardano.Wallet.Tools.Cli.VaultSpec
+    Cardano.Wallet.Tools.Ledger.BundleSpec
+    Cardano.Wallet.Tools.Ledger.Cli.BundleSpec
+    Cardano.Wallet.Tools.Ledger.EnvelopeSpec
+    Cardano.Wallet.Tools.Ledger.SubmitSpec
+    Cardano.Wallet.Tools.Ledger.WitnessSpec
     Cardano.Wallet.Tools.Selection.CollateralSpec
     Cardano.Wallet.Tools.Selection.StrategySpec
     Cardano.Wallet.Tools.Sign.AttachWitnessSpec
@@ -119,9 +157,14 @@ test-suite spec
     Cardano.Wallet.Tools.Vault.PayloadSpec
     Cardano.Wallet.Tools.Vault.ScryptSpec
     Cardano.Wallet.Tools.Vault.TxSignIdentitySpec
+    Support.Ledger
+    Support.LedgerScenario
     Support.Vault
 
-  build-tool-depends: hspec-discover:hspec-discover
+  build-tool-depends:
+    , cardano-wallet-tools:cwt
+    , hspec-discover:hspec-discover
+
   build-depends:
     , aeson
     , age
@@ -129,15 +172,26 @@ test-suite spec
     , base16-bytestring
     , bech32
     , bytestring
+    , cardano-crypto-class
+    , cardano-ledger-api
+    , cardano-ledger-binary
+    , cardano-ledger-conway
+    , cardano-ledger-core
+    , cardano-ledger-mary
+    , cardano-strict-containers
     , cardano-wallet-tools
+    , cardano-wallet-tools:ledger
+    , containers
     , crypton
     , directory
     , filepath
     , hspec
     , memory
+    , microlens
     , optparse-applicative
     , process
     , QuickCheck
     , text
     , transformers
     , unix
+    , vector

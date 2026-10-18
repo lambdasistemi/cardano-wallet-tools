@@ -1,15 +1,19 @@
 module Main where
 
 import Cardano.Wallet.Tools.Cli.Vault
+import Cardano.Wallet.Tools.Ledger.Cli.Bundle
 import Cardano.Wallet.Tools.Sign
 import Cli.Key (die)
 import Cli.Pipe (readCborHex, writeCborHex)
 import Data.Text qualified as T
 import Options.Applicative
+import System.Exit (exitFailure)
+import System.IO (hPutStr, stderr)
 
 data Command
     = Sign SigningKeySource
     | VaultSeal VaultSealOptions
+    | BundleCheck BundleCheckOptions
 
 parseVault :: Parser Command
 parseVault =
@@ -19,6 +23,17 @@ parseVault =
             ( info
                 (VaultSeal <$> vaultSealParser)
                 (progDesc "Encrypt a signing key into an age scrypt vault")
+            )
+        )
+
+parseBundle :: Parser Command
+parseBundle =
+    hsubparser
+        ( command
+            "check"
+            ( info
+                (BundleCheck <$> bundleCheckParser)
+                (progDesc "Run the offline checks of a bundle v1 file")
             )
         )
 
@@ -38,6 +53,12 @@ parseCommand =
                 ( info
                     parseVault
                     (progDesc "Manage age-encrypted signing key vaults")
+                )
+            <> command
+                "bundle"
+                ( info
+                    parseBundle
+                    (progDesc "Inspect bundles of unsigned transactions")
                 )
         )
 
@@ -69,3 +90,7 @@ main = do
             writeCborHex signedTx
         VaultSeal options ->
             runVaultSeal options >>= either (die . T.unpack) pure
+        BundleCheck options ->
+            runBundleCheck options >>= \case
+                Right summary -> putStrLn summary
+                Left failures -> hPutStr stderr (unlines failures) >> exitFailure
