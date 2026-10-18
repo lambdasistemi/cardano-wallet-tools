@@ -43,6 +43,8 @@ jobs:
         run: nix build --quiet
       - name: Test
         run: nix run .#unit-tests --quiet
+      - name: Unit check
+        run: nix build --quiet .#checks.x86_64-linux.unit
       - name: Cabal version matches manifest
         run: |
           set -euo pipefail
@@ -87,3 +89,16 @@ jobs:
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
       - name: Run HLint
         run: nix --quiet develop -c just hlint
+
+  cabal-check:
+    name: CI cabal check
+    needs: build-gate
+    runs-on: nixos
+    steps:
+      - uses: actions/checkout@v6
+      - uses: cachix/cachix-action@v17
+        with:
+          name: paolino
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - name: Check the package
+        run: nix --quiet develop -c just cabal-check

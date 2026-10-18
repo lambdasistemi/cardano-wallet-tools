@@ -1,47 +1,87 @@
+{- |
+Module      : Cardano.Wallet.Tools.Cli.Vault
+Description : The vault commands of cwt: option parsers and handlers
+Copyright   : (c) Paolo Veronelli, 2026
+License     : Apache-2.0
+
+The command-line surface of the vault: where a signing key comes from
+for @cwt sign@, and the handler behind @cwt vault seal@. The passphrase
+comes from the terminal or from an inherited descriptor
+(@--passphrase-fd N@) and from nowhere else.
+-}
 module Cardano.Wallet.Tools.Cli.Vault
-    ( -- * Signing key source (reusable parser surface)
+    ( -- * Signing key source
       SigningKeySource (..)
-    , PassphraseSource (..)
     , signingKeySourceParser
-
-      -- * Passphrase I/O
-    , promptPassphrase
-    , readPassphrase
-
-      -- * Signer construction
     , loadSignerFromSource
-    , loadSignerFromFile
+
+      -- * Sealing
+    , VaultSealOptions (..)
+    , vaultSealParser
+    , runVaultSeal
     ) where
 
-import Cardano.Wallet.Tools.Sign
-import Cardano.Wallet.Tools.Vault
-import Control.Monad (unless)
-import Crypto.Error (CryptoFailable (..))
-import Crypto.PubKey.Ed25519 qualified as Ed25519
-import Data.Aeson (FromJSON (..), withObject, (.:))
-import Data.Aeson qualified as Aeson
-import Data.ByteArray qualified as BA
+import Cardano.Wallet.Tools.Sign (Signer)
+import Cardano.Wallet.Tools.Vault.File
+    ( VaultRefusal (..)
+    , createVaultFile
+    , renderVaultRefusal
+    )
+import Cardano.Wallet.Tools.Vault.Passphrase
+    ( Confirmation (..)
+    , PassphraseSource (..)
+    , readPassphrase
+    , renderPassphraseRefusal
+    )
+import Cardano.Wallet.Tools.Vault.Payload
+    ( IdentitySelector (..)
+    , parseSigningKeyEnvelope
+    , signerFromKey
+    )
+import Cardano.Wallet.Tools.Vault.Scrypt
+    ( openVault
+    , sealVault
+    , vaultWorkFactorCap
+    )
+import Control.Monad.Trans.Except (ExceptT (..), except, runExceptT)
+import Crypto.Age.Scrypt
+    ( WorkFactor (..)
+    , mkWorkFactor
+    )
+import Data.Bifunctor (first)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
-import Data.ByteString.Base16 qualified as B16
 import Data.Text (Text)
 import Data.Text qualified as T
-import Data.Text.Encoding qualified as TE
+import Foreign.C.Types (CInt)
 import Options.Applicative
-import System.Exit (exitFailure)
-import System.IO
+import System.IO.Error (tryIOError)
+import Text.Read (readMaybe)
 
--- ---------------------------------------------------------------------------
--- CLI option types
-
+-- | Where @cwt sign@ takes its signing key from.
 data SigningKeySource
-    = PlaintextKey FilePath
-    | VaultKey FilePath PassphraseSource
+    = -- | a plaintext @cardano-cli@ signing-key envelope file
+      PlaintextKey FilePath
+    | -- | a vault file, its passphrase source, an optional identity
+      VaultKey FilePath PassphraseSource (Maybe IdentitySelector)
+    deriving stock (Eq, Show)
 
-data PassphraseSource
-    = InteractivePassphrase
-    | PassphraseFile FilePath
+-- | What @cwt vault seal@ was asked to do.
+data VaultSealOptions = VaultSealOptions
+    { sealKeyPath :: FilePath
+    -- ^ the plaintext signing key to seal
+    , sealOutPath :: FilePath
+    -- ^ the vault file to create, which must not exist
+    , sealPassphrase :: PassphraseSource
+    -- ^ where the passphrase comes from
+    , sealWorkFactor :: WorkFactor
+    -- ^ the scrypt work factor recorded in the vault
+    }
+    deriving stock (Eq, Show)
 
+{- | @--signing-key FILE@, or @--signing-key-vault FILE@ with an optional
+@--passphrase-fd N@ and @--vault-identity LABEL@.
+-}
 signingKeySourceParser :: Parser SigningKeySource
 signingKeySourceParser = vaultKey <|> plaintextKey
   where
@@ -51,126 +91,135 @@ signingKeySourceParser = vaultKey <|> plaintextKey
                 ( long "signing-key"
                     <> metavar "FILE"
                     <> help
-                        "Path to a plaintext cardano-cli TextEnvelope ed25519 signing key"
+                        "Path to a plaintext cardano-cli signing key text envelope"
                 )
     vaultKey =
         VaultKey
             <$> strOption
                 ( long "signing-key-vault"
                     <> metavar "FILE"
-                    <> help "Path to an age-encrypted signing key vault (.age)"
+                    <> help "Path to an age signing key vault"
                 )
             <*> passphraseSourceParser
+            <*> optional
+                ( IdentitySelector . T.pack
+                    <$> strOption
+                        ( long "vault-identity"
+                            <> metavar "LABEL"
+                            <> help
+                                "Identity to sign with, in a vault holding several"
+                        )
+                )
 
+-- | @--signing-key FILE --out FILE@ with the passphrase and work factor flags.
+vaultSealParser :: Parser VaultSealOptions
+vaultSealParser =
+    VaultSealOptions
+        <$> strOption
+            ( long "signing-key"
+                <> metavar "FILE"
+                <> help "Plaintext cardano-cli signing key to seal"
+            )
+        <*> strOption
+            ( long "out"
+                <> metavar "FILE"
+                <> help "Vault file to create; it must not exist"
+            )
+        <*> passphraseSourceParser
+        <*> option
+            workFactorReader
+            ( long "work-factor"
+                <> metavar "N"
+                <> value vaultWorkFactorCap
+                <> showDefaultWith (\(WorkFactor n) -> show n)
+                <> help "Scrypt work factor, 1 to the cap"
+            )
+
+-- | The terminal unless a descriptor is named.
 passphraseSourceParser :: Parser PassphraseSource
 passphraseSourceParser =
-    maybe InteractivePassphrase PassphraseFile
+    maybe PassphraseTerminal PassphraseDescriptor
         <$> optional
-            ( strOption
-                ( long "passphrase-file"
-                    <> metavar "FILE"
+            ( option
+                descriptorReader
+                ( long "passphrase-fd"
+                    <> metavar "N"
                     <> help
-                        "Read vault passphrase from FILE (default: prompt on /dev/tty)"
+                        "Read the passphrase from the inherited descriptor N (default: ask on /dev/tty)"
                 )
             )
 
--- ---------------------------------------------------------------------------
--- Passphrase I/O
+descriptorReader :: ReadM Int
+descriptorReader = eitherReader $ \raw ->
+    case readMaybe raw of
+        Just n
+            | n >= 0 && n <= fromIntegral (maxBound :: CInt) -> Right n
+        _ -> Left "expected a descriptor number"
 
-{- | Prompt for a passphrase on /dev/tty with echo disabled. Stdin is
-untouched, so this is safe to call while stdin carries a CBOR hex pipe.
+workFactorReader :: ReadM WorkFactor
+workFactorReader = eitherReader $ \raw ->
+    case readMaybe raw of
+        Just n
+            | n >= 1
+            , n <= capNumber
+            , Just factor <- mkWorkFactor (fromIntegral n) ->
+                Right factor
+        _ ->
+            Left ("expected a work factor from 1 to " <> show capNumber)
+
+-- | The cap as a number: the parser's upper bound and its message.
+capNumber :: Int
+capNumber = let WorkFactor cap = vaultWorkFactorCap in fromIntegral cap
+
+{- | Seal the key file into a new vault file; the refusal, rendered, on
+failure. The key is read and checked, and the passphrase asked twice on a
+terminal, before the vault file is created.
 -}
-promptPassphrase :: String -> IO ByteString
-promptPassphrase prompt = do
-    tty <- openFile "/dev/tty" ReadWriteMode
-    hPutStr tty prompt
-    hFlush tty
-    hSetEcho tty False
-    line <- hGetLine tty
-    hSetEcho tty True
-    hPutStrLn tty ""
-    hClose tty
-    pure $ TE.encodeUtf8 (T.pack line)
+runVaultSeal :: VaultSealOptions -> IO (Either Text ())
+runVaultSeal options = runExceptT $ do
+    keyFile <- readBytes "signing key file" (sealKeyPath options)
+    key <-
+        except . first (const notAKey) $
+            parseSigningKeyEnvelope keyFile
+    passphrase <-
+        ExceptT . fmap (first renderPassphraseRefusal) $
+            readPassphrase AskTwice (sealPassphrase options)
+    vault <-
+        ExceptT . fmap (first (const notWritten)) $
+            sealVault (sealWorkFactor options) passphrase key
+    ExceptT . fmap (first renderVaultRefusal) $
+        createVaultFile (sealOutPath options) vault
+  where
+    notAKey =
+        "seal input is not a signing key: " <> T.pack (sealKeyPath options)
+    notWritten = renderVaultRefusal (VaultNotWritten (sealOutPath options))
 
-readPassphrase :: PassphraseSource -> IO ByteString
-readPassphrase = \case
-    InteractivePassphrase -> promptPassphrase "vault passphrase: "
-    PassphraseFile path ->
-        BS.dropWhileEnd (\c -> c == 10 || c == 13 || c == 32)
-            <$> BS.readFile path
-
--- ---------------------------------------------------------------------------
--- Signer construction
-
-loadSignerFromSource :: SigningKeySource -> IO (Signer IO)
+-- | The signer for the source; the refusal, rendered, on failure.
+loadSignerFromSource
+    :: SigningKeySource -> IO (Either Text (Signer IO))
 loadSignerFromSource = \case
-    PlaintextKey path -> loadSignerFromFile path
-    VaultKey path ppSrc -> do
-        ciphertext <- BS.readFile path
-        pp <- readPassphrase ppSrc
-        vaultPass <-
-            either (die . T.unpack . renderVaultError) pure $
-                mkVaultPassphrase pp
-        plaintext <-
-            either (die . T.unpack . renderVaultError) pure $
-                decryptVault vaultPass ciphertext
-        parseTextEnvelopeBytes plaintext
+    PlaintextKey path -> runExceptT $ do
+        keyFile <- readBytes "signing key file" path
+        key <-
+            except . first (const (notAKey path)) $
+                parseSigningKeyEnvelope keyFile
+        pure (signerFromKey key)
+    VaultKey path source selector -> runExceptT $ do
+        vault <- readBytes "vault file" path
+        passphrase <-
+            ExceptT . fmap (first renderPassphraseRefusal) $
+                readPassphrase AskOnce source
+        key <-
+            except . first renderVaultRefusal $
+                openVault selector passphrase vault
+        pure (signerFromKey key)
+  where
+    notAKey path = "not a payment signing key: " <> T.pack path
 
-loadSignerFromFile :: FilePath -> IO (Signer IO)
-loadSignerFromFile path = BS.readFile path >>= parseTextEnvelopeBytes
-
--- ---------------------------------------------------------------------------
--- Internal: TextEnvelope → Signer
-
-data TextEnvelope = TextEnvelope
-    { teType :: !Text
-    , teCborHex :: !Text
-    }
-
-instance FromJSON TextEnvelope where
-    parseJSON = withObject "TextEnvelope" $ \o ->
-        TextEnvelope <$> o .: "type" <*> o .: "cborHex"
-
-paymentKeyTypes :: [Text]
-paymentKeyTypes =
-    [ "PaymentSigningKeyShelley_ed25519"
-    , "PaymentExtendedSigningKeyShelley_ed25519_bip32"
-    , "GenesisUTxOSigningKey_ed25519"
-    ]
-
-parseTextEnvelopeBytes :: ByteString -> IO (Signer IO)
-parseTextEnvelopeBytes jsonBytes = do
-    env <-
-        maybe (die "cannot parse TextEnvelope JSON") pure $
-            Aeson.decodeStrict' jsonBytes
-    unless (teType env `elem` paymentKeyTypes) $
-        die $
-            "unsupported key type: " <> T.unpack (teType env)
-    hexBytes <-
-        either (die . ("invalid cborHex: " <>)) pure $
-            B16.decode $
-                TE.encodeUtf8 $
-                    teCborHex env
-    rawKey <- stripCborByteStringHeader hexBytes
-    sk <- case Ed25519.secretKey (rawKey :: ByteString) of
-        CryptoPassed k -> pure k
-        CryptoFailed e -> die $ "invalid ed25519 key: " <> show e
-    let pk = Ed25519.toPublic sk
-        vkeyBytes = BA.convert pk :: ByteString
-    pure . Signer $ \(TxBodyBytes body) -> do
-        let sig = Ed25519.sign sk pk body
-        pure $ DetachedWitness vkeyBytes (BA.convert sig :: ByteString)
-
-stripCborByteStringHeader :: ByteString -> IO ByteString
-stripCborByteStringHeader bs = case BS.uncons bs of
-    Just (0x58, rest) ->
-        case BS.uncons rest of
-            Just (len, keyBytes)
-                | fromIntegral len == BS.length keyBytes && len == 32 ->
-                    pure keyBytes
-            _ -> die "unexpected CBOR key length in TextEnvelope"
-    Just (0x20, _) -> die "cborHex looks like a public key, not a signing key"
-    _ -> die "unexpected CBOR header in TextEnvelope"
-
-die :: String -> IO a
-die msg = hPutStrLn stderr msg >> exitFailure
+-- | A file's bytes, or the line saying what could not be read.
+readBytes :: Text -> FilePath -> ExceptT Text IO ByteString
+readBytes what path =
+    ExceptT . fmap (first (const unreadable)) $
+        tryIOError (BS.readFile path)
+  where
+    unreadable = "cannot read the " <> what <> ": " <> T.pack path
