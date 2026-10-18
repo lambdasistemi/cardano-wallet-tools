@@ -1,0 +1,46 @@
+{
+  "cardanoTxSignVault": {
+    "version": 1,
+    "identities": {
+      "alice": {
+        "label": "alice",
+        "network": "preprod",
+        "keyHash": "a99ce21b0d30536bc518ee42b328cfda357ef5da396b45bf7ba2286a",
+        "source": {
+          "kind": "cardano-cli-skey",
+          "keyEnvelope": {
+            "type": "PaymentSigningKeyShelley_ed25519",
+            "description": "Payment Signing Key",
+            "cborHex": "58208bc2aad2e75d40d62617ebf59012f7636dbb113395f679ef3019f5b7a338ee30"
+          }
+        }
+      },
+      "bob": {
+        "label": "bob",
+        "network": "preprod",
+        "keyHash": "cf60a8f05cf171725a7a2db774c52545daec0ef796404526a7eb53b4",
+        "source": {
+          "kind": "cardano-cli-skey",
+          "keyEnvelope": {
+            "type": "PaymentSigningKeyShelley_ed25519",
+            "description": "Payment Signing Key",
+            "cborHex": "582020e4492d99e7d1782bb5faeefd3ec06be8116236dd4ccf8864171f6b5e4b6b14"
+          }
+        }
+      },
+      "carol": {
+        "label": "carol",
+        "network": "preprod",
+        "keyHash": "928f37df82fafb52ab388fa0883017d1c76ba87e1ffd9bb6cc41bf19",
+        "source": {
+          "kind": "cardano-cli-skey",
+          "keyEnvelope": {
+            "type": "PaymentSigningKeyShelley_ed25519",
+            "description": "Payment Signing Key",
+            "cborHex": "58206744987f6c3c967983af8f67be5c3ee6f4544f1ed6c2c324921bdeba0bb63e6c"
+          }
+        }
+      }
+    }
+  }
+}

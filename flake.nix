@@ -56,17 +56,29 @@
                 lintPkgs.haskellPackages.fourmolu
                 lintPkgs.haskellPackages.hlint
                 pkgs.just
+                pkgs.age
                 mkdocs.packages.${system}.from-nixpkgs
               ];
             };
             modules = [
               { packages.cardano-wallet-tools.flags.werror = true; }
+              {
+                packages.cardano-wallet-tools.components.tests.spec.build-tools =
+                  [ pkgs.age ];
+              }
             ];
           };
           pkg = project.hsPkgs.cardano-wallet-tools;
           components = pkg.components;
           unitTests = components.tests.spec;
           cwt = components.exes.cwt;
+          # Stock age is a test input: the interop examples decrypt vaults
+          # with it and fail when it is missing from PATH.
+          unitTestsApp = pkgs.writeShellApplication {
+            name = "unit-tests";
+            runtimeInputs = [ pkgs.age ];
+            text = ''exec ${unitTests}/bin/spec "$@"'';
+          };
         in {
           packages = {
             default = components.library;
@@ -79,7 +91,7 @@
           apps = {
             unit-tests = {
               type = "app";
-              program = "${unitTests}/bin/spec";
+              program = "${unitTestsApp}/bin/unit-tests";
             };
             cwt = {
               type = "app";
